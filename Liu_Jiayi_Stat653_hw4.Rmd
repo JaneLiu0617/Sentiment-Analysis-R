@@ -1,0 +1,306 @@
+---
+title: "Stat. 653 Homework 4"
+author: "Jiayi Liu"
+date: "April 22, 2019"
+output:
+  word_document: default
+  html_notebook: default
+---
+
+Upload one file to Blackboard.
+
+Read: Chapter 5
+Read: Chapter 15 in the Modern Data Science with R
+Problems:
+
+#Run the R code from Chapter 4. 05-document-term-matrices.Rmd
+
+```{r}
+library(knitr)
+opts_chunk$set(message = FALSE, warning = FALSE, cache = TRUE)
+options(width = 100, dplyr.width = 150)
+library(ggplot2)
+library(methods)
+theme_set(theme_light())
+library(purrr)
+```
+
+```{r}
+knitr::include_graphics("images/tidyflow-ch-5.png")
+```
+
+```{r}
+library(tm)
+
+data("AssociatedPress", package = "topicmodels")
+AssociatedPress
+```
+
+```{r}
+terms <- Terms(AssociatedPress)
+head(terms)
+```
+```{r}
+library(dplyr)
+library(tidytext)
+
+ap_td <- tidy(AssociatedPress)
+ap_td
+```
+
+```{r}
+ap_sentiments <- ap_td %>%
+  inner_join(get_sentiments("bing"), by = c(term = "word"))
+
+ap_sentiments
+```
+
+```{r}
+library(ggplot2)
+
+ap_sentiments %>%
+  count(sentiment, term, wt = count) %>%
+  ungroup() %>%
+  filter(n >= 200) %>%
+  mutate(n = ifelse(sentiment == "negative", -n, n)) %>%
+  mutate(term = reorder(term, n)) %>%
+  ggplot(aes(term, n, fill = sentiment)) +
+  geom_bar(stat = "identity") +
+  ylab("Contribution to sentiment") +
+  coord_flip()
+```
+
+### Tidying dfm objects
+
+```{r}
+data("data_corpus_inaugural", package = "quanteda")
+inaug_dfm <- quanteda::dfm(data_corpus_inaugural, verbose = FALSE)
+```
+```{r}
+inaug_dfm
+```
+
+```{r}
+inaug_td <- tidy(inaug_dfm)
+inaug_td
+```
+
+```{r}
+inaug_tf_idf <- inaug_td %>%
+  bind_tf_idf(term, document, count) %>%
+  arrange(desc(tf_idf))
+
+inaug_tf_idf
+```
+
+```{r}
+speeches <- c("1933-Roosevelt", "1861-Lincoln",
+              "1961-Kennedy", "2009-Obama")
+
+inaug_tf_idf %>%
+  filter(document %in% speeches) %>%
+  group_by(document) %>%
+  top_n(10, tf_idf) %>%
+  ungroup() %>%
+  mutate(term = reorder(term, tf_idf)) %>%
+  ggplot(aes(term, tf_idf, fill = document)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ document, scales = "free") +
+  coord_flip() +
+  labs(x = "",
+       y = "tf-idf")
+```
+
+```{r}
+library(tidyr)
+
+year_term_counts <- inaug_td %>%
+  extract(document, "year", "(\\d+)", convert = TRUE) %>%
+  complete(year, term, fill = list(count = 0)) %>%
+  group_by(year) %>%
+  mutate(year_total = sum(count))
+```
+
+```{r}
+year_term_counts %>%
+  filter(term %in% c("god", "america", "foreign", "union", "constitution", "freedom")) %>%
+  ggplot(aes(year, count / year_total)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~ term, scales = "free_y") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  ylab("% frequency of word in inaugural address")
+```
+
+## Casting tidy text data into a matrix {#cast-dtm}
+
+
+```{r}
+ap_td %>%
+  cast_dtm(document, term, count)
+```
+
+```{r}
+ap_td %>%
+  cast_dfm(document, term, count)
+```
+```{r}
+library(Matrix)
+
+# cast into a Matrix object
+m <- ap_td %>%
+  cast_sparse(document, term, count)
+
+class(m)
+dim(m)
+```
+
+```{r}
+library(janeaustenr)
+
+austen_dtm <- austen_books() %>%
+  unnest_tokens(word, text) %>%
+  count(book, word) %>%
+  cast_dtm(book, word, n)
+
+austen_dtm
+```
+
+## Tidying corpus objects with metadata
+
+
+```{r}
+data("acq")
+acq
+
+# first document
+acq[[1]]
+```
+
+```{r}
+acq_td <- tidy(acq)
+acq_td
+```
+
+```{r}
+acq_tokens <- acq_td %>%
+  select(-places) %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words, by = "word")
+
+# most common words
+acq_tokens %>%
+  count(word, sort = TRUE)
+
+# tf-idf
+acq_tokens %>%
+  count(id, word) %>%
+  bind_tf_idf(word, id, n) %>%
+  arrange(desc(tf_idf))
+```
+
+### Example: mining financial articles {#financial}
+
+```{r}
+library(tm.plugin.webmining)
+library(purrr)
+
+library(tidyverse)
+library(mdsr)
+library(aRxiv)
+library(dplyr)
+```
+```{r}
+arxiv_search(query = "MSFT")
+```
+
+
+
+
+```{r}
+company <- c("Microsoft", "Apple", "Google", "Amazon", "Facebook",
+             "Twitter", "IBM", "Yahoo", "Netflix")
+symbol <- c("MSFT", "AAPL", "GOOG", "AMZN", "FB", "TWTR", "IBM", "YHOO", "NFLX")
+
+#download_articles <- function(symbol) {
+  #p0=arxiv_search(query = symbol)
+ # p0=paste0(p0)
+#}
+
+
+#stock_articles <- data_frame(company = company, symbol = symbol) %>%
+ # mutate(corpus = map(symbol, download_articles))
+```
+
+```{r}
+
+p1 <- arxiv_search(query = '"MSFT"', limit = 200)
+
+p1 <- p1 %>% mutate(company="Microsoft", symbol= "MSFT")
+head(p1)
+```
+
+```{r}
+library(lubridate) 
+
+p1 <- p1 %>%
+  mutate(submitted = ymd_hms(submitted), updated = ymd_hms(updated)) 
+glimpse(p1)
+```
+
+```{r}
+tally(~ year(submitted), data = p1)
+```
+
+```{r}
+p1 %>% filter(year(submitted) == 2003) %>% 
+  glimpse()
+```
+```{r}
+tally(~ primary_category, data = p1)
+```
+
+```{r}
+p1 %>% mutate(field = str_extract(primary_category, "^[a-z,-]+")) %>% 
+  tally(x = ~field) %>% 
+  sort()
+
+```
+
+```{r}
+library(tm) 
+
+Corpus <- with(p1, VCorpus(VectorSource(abstract))) 
+Corpus[[1]] %>% as.character() %>% 
+  strwrap()
+```
+
+```{r}
+Corpus <- Corpus %>% tm_map(stripWhitespace) %>% 
+  tm_map(removeNumbers) %>% 
+  tm_map(removePunctuation) %>% 
+  tm_map(content_transformer(tolower)) %>% 
+  tm_map(removeWords, stopwords("english"))
+strwrap(as.character(Corpus[[1]]))
+```
+
+```{r}
+library(wordcloud) 
+
+wordcloud(Corpus, max.words = 30, scale = c(8, 1), colors = topo.colors(n = 30), random.color = TRUE)
+```
+```{r}
+DTM <- DocumentTermMatrix(Corpus, control = list(weighting = weightTfIdf)) 
+DTM
+findFreqTerms(DTM, lowfreq = 0.8)
+```
+
+```{r}
+DTM %>% as.matrix() %>% 
+  apply(MARGIN = 2, sum) %>% 
+  sort(decreasing = TRUE) %>% 
+  head(9)
+findAssocs(DTM, terms = "statistics", corlimit = 0.5)
+findAssocs(DTM, terms = "mathematics", corlimit = 0.5)
+```
+
